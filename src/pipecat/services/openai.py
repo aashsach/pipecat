@@ -4,12 +4,14 @@
 # SPDX-License-Identifier: BSD 2-Clause License
 #
 
+import asyncio
 import aiohttp
 import base64
 import io
 import json
 import httpx
 from dataclasses import dataclass
+from collections import defaultdict
 
 from typing import AsyncGenerator, List, Literal
 
@@ -130,9 +132,10 @@ class BaseOpenAILLMService(LLMService):
         return chunks
 
     async def _process_context(self, context: OpenAILLMContext):
-        function_name = ""
-        arguments = ""
-        tool_call_id = ""
+
+        tool_call_dict = defaultdict(lambda: dict(
+            function_name="", arguments="", tool_call_id="")
+        )
 
         await self.start_ttfb_metrics()
 
@@ -170,12 +173,12 @@ class BaseOpenAILLMService(LLMService):
 
                 tool_call = chunk.choices[0].delta.tool_calls[0]
                 if tool_call.function and tool_call.function.name:
-                    function_name += tool_call.function.name
-                    tool_call_id = tool_call.id
-                    await self.call_start_function(context, function_name)
+                    tool_call_dict[tool_call.index]["function_name"] += tool_call.function.name
+                    tool_call_dict[tool_call.index]["tool_call_id"] = tool_call.id
+                    await self.call_start_function(context, tool_call_dict[tool_call.index]["function_name"])
                 if tool_call.function and tool_call.function.arguments:
                     # Keep iterating through the response to collect all the argument fragments
-                    arguments += tool_call.function.arguments
+                    tool_call_dict[tool_call.index]["arguments"] += tool_call.function.arguments
             elif chunk.choices[0].delta.content:
                 await self.push_frame(TextFrame(chunk.choices[0].delta.content))
 
@@ -183,12 +186,20 @@ class BaseOpenAILLMService(LLMService):
         # a registered handler. If so, run the registered callback, save the result to
         # the context, and re-prompt to get a chat answer. If we don't have a registered
         # handler, raise an exception.
-        if function_name and arguments:
-            if self.has_function(function_name):
-                await self._handle_function_call(context, tool_call_id, function_name, arguments)
-            else:
-                raise OpenAIUnhandledFunctionException(
-                    f"The LLM tried to call a function named '{function_name}', but there isn't a callback registered for that function.")
+        tool_call_future = []
+        for tool_call_index, tool_call_value in tool_call_dict.items():
+            function_name = tool_call_value["function_name"]
+            arguments = tool_call_value["arguments"]
+            tool_call_id = tool_call_value["tool_call_id"]
+            if function_name and arguments:
+                if self.has_function(function_name):
+                    tool_call_future.append(self._handle_function_call(
+                        context, tool_call_id, function_name, arguments))
+                else:
+                    raise OpenAIUnhandledFunctionException(
+                        f"The LLM tried to call a function named '{function_name}', but there isn't a callback registered for that function.")
+        if tool_call_future:
+            await asyncio.gather(*tool_call_future)
 
     async def _handle_function_call(
             self,
