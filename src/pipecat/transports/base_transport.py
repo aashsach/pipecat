@@ -34,6 +34,7 @@ class TransportParams(BaseModel):
     audio_out_sample_rate: int = 16000
     audio_out_encoding: Literal["mulaw", "pcm"] = "pcm"
     audio_out_channels: int = 1
+    audio_out_bitrate: int = 96000
     audio_in_enabled: bool = False
     audio_in_sample_rate: int = 16000
     audio_in_channels: int = 1
@@ -43,11 +44,12 @@ class TransportParams(BaseModel):
 
 
 class BaseTransport(ABC):
-
-    def __init__(self,
-                 input_name: str | None = None,
-                 output_name: str | None = None,
-                 loop: asyncio.AbstractEventLoop | None = None):
+    def __init__(
+        self,
+        input_name: str | None = None,
+        output_name: str | None = None,
+        loop: asyncio.AbstractEventLoop | None = None,
+    ):
         self._input_name = input_name
         self._output_name = output_name
         self._loop = loop or asyncio.get_running_loop()
@@ -65,6 +67,7 @@ class BaseTransport(ABC):
         def decorator(handler):
             self.add_event_handler(event_name, handler)
             return handler
+
         return decorator
 
     def add_event_handler(self, event_name: str, handler):

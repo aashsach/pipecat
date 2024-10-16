@@ -19,10 +19,6 @@ class TwilioFrameSerializer(FrameSerializer):
         twilio_sample_rate: int = 8000
         sample_rate: int = 16000
 
-    SERIALIZABLE_TYPES = {
-        AudioRawFrame: "audio",
-    }
-
     def __init__(self, stream_sid: str, params: InputParams = InputParams()):
         self._stream_sid = stream_sid
         self._params = params
@@ -69,13 +65,11 @@ class TwilioFrameSerializer(FrameSerializer):
             payload = base64.b64decode(payload_base64)
 
             deserialized_data = ulaw_to_pcm(
-                payload,
-                self._params.twilio_sample_rate,
-                self._params.sample_rate)
+                payload, self._params.twilio_sample_rate, self._params.sample_rate
+            )
             audio_frame = AudioRawFrame(
-                audio=deserialized_data,
-                num_channels=1,
-                sample_rate=self._params.sample_rate,
+                audio=deserialized_data, num_channels=1, sample_rate=self._params.sample_rate,
                 encoding="pcm"
+
             )
             return audio_frame
